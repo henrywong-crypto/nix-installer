@@ -224,14 +224,14 @@ impl NixEnv<'_> {
             .await
             .map_err(|e| {
                 super::Error::StartNixCommand(
-                    format!("nix-env --uninstall'ing conflicting package {:?}", remove),
+                    format!("nix-env --uninstall'ing conflicting package {remove:?}"),
                     e,
                 )
             })?;
 
         if !output.status.success() {
             return Err(super::Error::NixCommand(
-                format!("nix-env --uninstall'ing conflicting package {:?}", remove),
+                format!("nix-env --uninstall'ing conflicting package {remove:?}"),
                 output,
             ));
         }
@@ -251,7 +251,7 @@ impl NixEnv<'_> {
             .await
             .map_err(|e| {
                 super::Error::StartNixCommand(
-                    format!("Adding the package {:?} to the profile", add),
+                    format!("Adding the package {add:?} to the profile"),
                     e,
                 )
             })?;

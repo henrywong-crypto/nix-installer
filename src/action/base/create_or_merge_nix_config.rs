@@ -239,7 +239,7 @@ impl Action for CreateOrMergeNixConfig {
             tracing::Level::DEBUG,
             "create_or_merge_nix_config",
             path = tracing::field::display(self.path.display()),
-            mode = tracing::field::display(format!("{:#o}", NIX_CONF_MODE)),
+            mode = tracing::field::display(format!("{NIX_CONF_MODE:#o}")),
             pending_nix_config = tracing::field::Empty,
         );
 

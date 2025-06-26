@@ -9,8 +9,6 @@ use clap::{
 };
 use url::Url;
 
-use crate::distribution::Distribution;
-
 pub const SCRATCH_DIR: &str = "/nix/temp-install-dir";
 
 pub const DEFAULT_NIX_BUILD_USER_GROUP_NAME: &str = "nixbld";
@@ -42,17 +40,6 @@ Settings which only apply to certain [`Planner`](crate::planner::Planner)s shoul
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 #[cfg_attr(feature = "cli", derive(clap::Parser))]
 pub struct CommonSettings {
-    /// Enable Determinate Nix. See: <https://determinate.systems/enterprise>
-    #[cfg_attr(
-        feature = "cli",
-        clap(
-            long = "determinate",
-            env = "NIX_INSTALLER_DETERMINATE",
-            default_value = "false"
-        )
-    )]
-    pub determinate_nix: bool,
-
     /// Modify the user profile to automatically load Nix
     #[cfg_attr(
         feature = "cli",
@@ -227,7 +214,6 @@ impl CommonSettings {
         };
 
         Ok(Self {
-            determinate_nix: false,
             modify_profile: true,
             nix_build_group_name: String::from(crate::settings::DEFAULT_NIX_BUILD_USER_GROUP_NAME),
             nix_build_group_id: default_nix_build_group_id(),
@@ -246,7 +232,6 @@ impl CommonSettings {
     /// A listing of the settings, suitable for [`Planner::settings`](crate::planner::Planner::settings)
     pub fn settings(&self) -> Result<HashMap<String, serde_json::Value>, InstallSettingsError> {
         let Self {
-            determinate_nix,
             modify_profile,
             nix_build_group_name,
             nix_build_group_id,
@@ -262,10 +247,6 @@ impl CommonSettings {
         } = self;
         let mut map = HashMap::default();
 
-        map.insert(
-            "determinate_nix".into(),
-            serde_json::to_value(determinate_nix)?,
-        );
         map.insert(
             "modify_profile".into(),
             serde_json::to_value(modify_profile)?,
@@ -301,14 +282,6 @@ impl CommonSettings {
         map.insert("skip_nix_conf".into(), serde_json::to_value(skip_nix_conf)?);
 
         Ok(map)
-    }
-
-    pub fn distribution(&self) -> Distribution {
-        if self.determinate_nix {
-            Distribution::DeterminateNix
-        } else {
-            Distribution::Nix
-        }
     }
 }
 

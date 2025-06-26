@@ -5,7 +5,6 @@ use crate::{
         macos::NIX_VOLUME_MOUNTD_DEST, Action, ActionDescription, ActionError, ActionErrorKind,
         ActionState, ActionTag, StatefulAction,
     },
-    distribution::Distribution,
     execute_command,
     os::darwin::DiskUtilApfsListOutput,
 };
@@ -25,7 +24,6 @@ Encrypt an APFS volume
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 #[serde(tag = "action_name", rename = "encrypt_apfs_volume")]
 pub struct EncryptApfsVolume {
-    distribution: Distribution,
     disk: PathBuf,
     name: String,
 }
@@ -33,7 +31,6 @@ pub struct EncryptApfsVolume {
 impl EncryptApfsVolume {
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn plan(
-        distribution: Distribution,
         disk: impl AsRef<Path>,
         name: impl AsRef<str>,
         planned_create_apfs_volume: &StatefulAction<CreateApfsVolume>,
@@ -63,11 +60,7 @@ impl EncryptApfsVolume {
             // The user has a password matching what we would create.
             if planned_create_apfs_volume.state == ActionState::Completed {
                 // We detected a created volume already, and a password exists, so we can keep using that and skip doing anything
-                return Ok(StatefulAction::completed(Self {
-                    distribution,
-                    name,
-                    disk,
-                }));
+                return Ok(StatefulAction::completed(Self { name, disk }));
             }
 
             // Ask the user to remove it
@@ -109,20 +102,12 @@ impl EncryptApfsVolume {
         for container in parsed.containers {
             for volume in container.volumes {
                 if volume.name.as_ref() == Some(&name) && volume.file_vault.unwrap_or(false) {
-                    return Ok(StatefulAction::completed(Self {
-                        distribution,
-                        disk,
-                        name,
-                    }));
+                    return Ok(StatefulAction::completed(Self { disk, name }));
                 }
             }
         }
 
-        Ok(StatefulAction::uncompleted(Self {
-            distribution,
-            name,
-            disk,
-        }))
+        Ok(StatefulAction::uncompleted(Self { name, disk }))
     }
 }
 
@@ -210,7 +195,7 @@ impl Action for EncryptApfsVolume {
             "-s",
             KEYCHAIN_NIX_STORE_SERVICE,
             "-l",
-            format!("{} encryption password", disk_str).as_str(),
+            format!("{disk_str} encryption password").as_str(),
             "-D",
             "Encrypted volume password",
             "-j",
@@ -225,10 +210,6 @@ impl Action for EncryptApfsVolume {
             "-T",
             "/usr/bin/security",
         ]);
-
-        if self.distribution == Distribution::DeterminateNix {
-            cmd.args(["-T", "/usr/local/bin/determinate-nixd"]);
-        }
 
         cmd.arg("/Library/Keychains/System.keychain");
 
@@ -327,7 +308,7 @@ impl Action for EncryptApfsVolume {
                 "-s",
                 KEYCHAIN_NIX_STORE_SERVICE,
                 "-l",
-                format!("{} encryption password", disk_str).as_str(),
+                format!("{disk_str} encryption password").as_str(),
                 "-D",
                 "Encrypted volume password",
                 "-j",

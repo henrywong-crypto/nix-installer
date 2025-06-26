@@ -224,7 +224,7 @@ impl Action for ConfigureInitService {
 
                 if self.start_daemon {
                     for SocketFile { name, .. } in self.socket_files.iter() {
-                        explanation.push(format!("Run `systemctl enable --now {}`", name));
+                        explanation.push(format!("Run `systemctl enable --now {name}`"));
                     }
                 }
                 vec.push(ActionDescription::new(self.tracing_synopsis(), explanation))
@@ -493,7 +493,7 @@ impl Action for ConfigureInitService {
                 let mut steps = vec![];
 
                 for SocketFile { name, .. } in self.socket_files.iter() {
-                    steps.push(format!("Run `systemctl disable {}`", name));
+                    steps.push(format!("Run `systemctl disable {name}`"));
                 }
 
                 steps.push("Run `systemctl disable nix-daemon.service`".to_string());

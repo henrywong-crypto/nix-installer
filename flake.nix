@@ -10,19 +10,6 @@
       url = "https://flakehub.com/f/DeterminateSystems/nix-src/*";
       # Omitting `inputs.nixpkgs.follows = "nixpkgs";` on purpose
     };
-
-    determinate = {
-      url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
-
-      # We set the overrides below so the flake.lock has many fewer nodes.
-      #
-      # The `determinate` input is used to access the builds of `determinate-nixd`.
-      # Below, we access the `packages` outputs, which download static builds of `determinate-nixd` and makes them executable.
-      # The way we consume the determinate flake means the `nix` and `nixpkgs` inputs are not meaningfully used.
-      # This means `follows` won't cause surprisingly extensive rebuilds, just trivial `chmod +x` rebuilds.
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.nix.follows = "nix";
-    };
   };
 
   outputs =
@@ -30,13 +17,11 @@
     , nixpkgs
     , crane
     , nix
-    , determinate
     , ...
     } @ inputs:
     let
       nix_tarball_url_prefix = "https://releases.nixos.org/nix/nix-2.29.1/nix-2.29.1-";
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
-      systemsSupportedByDeterminateNixd = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 
       forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: (forSystem system f));
 
@@ -49,8 +34,6 @@
       nixTarballs = forAllSystems ({ system, ... }:
         inputs.nix.tarballs_direct.${system}
           or "${inputs.nix.packages."${system}".binaryTarball}/nix-${inputs.nix.packages."${system}".default.version}-${system}.tar.xz");
-
-      optionalPathToDeterminateNixd = system: if builtins.elem system systemsSupportedByDeterminateNixd then "${inputs.determinate.packages.${system}.default}/bin/determinate-nixd" else null;
 
       installerPackage = { pkgs, stdenv, buildPackages }:
         let
@@ -89,8 +72,6 @@
           env = sharedAttrs.env // {
             RUSTFLAGS = "--cfg tokio_unstable";
             NIX_TARBALL_URL = "${nix_tarball_url_prefix}${pkgs.stdenv.hostPlatform.system}.tar.xz";
-            DETERMINATE_NIX_TARBALL_PATH = nixTarballs.${stdenv.hostPlatform.system};
-            DETERMINATE_NIXD_BINARY_PATH = optionalPathToDeterminateNixd stdenv.hostPlatform.system;
           };
         });
     in
@@ -110,8 +91,6 @@
 
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustcSrc}/library";
             NIX_TARBALL_URL = "${nix_tarball_url_prefix}${pkgs.stdenv.hostPlatform.system}.tar.xz";
-            DETERMINATE_NIX_TARBALL_PATH = nixTarballs.${system};
-            DETERMINATE_NIXD_BINARY_PATH = optionalPathToDeterminateNixd system;
 
             nativeBuildInputs = with pkgs; [ ];
             buildInputs = with pkgs; [
@@ -174,10 +153,6 @@
         {
           inherit (pkgs) nix-installer nix-installer-static;
           default = pkgs.nix-installer-static;
-        } // nixpkgs.lib.optionalAttrs (pkgs.stdenv.isDarwin) {
-          determinate-nixd = pkgs.runCommand "determinate-nixd-link" { } ''
-            ln -s ${optionalPathToDeterminateNixd system} $out
-          '';
         });
 
       hydraJobs = {

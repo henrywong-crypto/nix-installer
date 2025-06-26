@@ -6,7 +6,7 @@ use tracing::{span, Span};
 
 use crate::{
     action::{Action, ActionDescription, ActionError, ActionErrorKind, ActionTag, StatefulAction},
-    distribution::{Distribution, TarballLocation},
+    distribution::{self, TarballLocation},
     parse_ssl_cert,
     settings::UrlOrPath,
     util::OnMissing,
@@ -18,7 +18,6 @@ Fetch a URL to the given path
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 #[serde(tag = "action_name", rename = "fetch_and_unpack_nix")]
 pub struct FetchAndUnpackNix {
-    distribution: Distribution,
     url_or_path: Option<UrlOrPath>,
     dest: PathBuf,
     proxy: Option<Url>,
@@ -28,7 +27,6 @@ pub struct FetchAndUnpackNix {
 impl FetchAndUnpackNix {
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn plan(
-        distribution: Distribution,
         url_or_path: Option<UrlOrPath>,
         dest: PathBuf,
         proxy: Option<Url>,
@@ -56,7 +54,6 @@ impl FetchAndUnpackNix {
         }
 
         Ok(Self {
-            distribution,
             url_or_path,
             dest,
             proxy,
@@ -73,16 +70,9 @@ impl Action for FetchAndUnpackNix {
         ActionTag("fetch_and_unpack_nix")
     }
     fn tracing_synopsis(&self) -> String {
-        match self.distribution.tarball_location_or(&self.url_or_path) {
+        match distribution::tarball_location_or(&self.url_or_path) {
             TarballLocation::UrlOrPath(uop) => {
                 format!("Fetch `{}` to `{}`", uop, self.dest.display())
-            },
-            TarballLocation::InMemory(from, _) => {
-                format!(
-                    "Extract the bundled Nix (originally from {}) to `{}`",
-                    from,
-                    self.dest.display()
-                )
             },
         }
     }
@@ -114,8 +104,7 @@ impl Action for FetchAndUnpackNix {
 
     #[tracing::instrument(level = "debug", skip_all)]
     async fn execute(&mut self) -> Result<(), ActionError> {
-        let bytes = match self.distribution.tarball_location_or(&self.url_or_path) {
-            TarballLocation::InMemory(_, bytes) => Bytes::from(bytes),
+        let bytes = match distribution::tarball_location_or(&self.url_or_path) {
             TarballLocation::UrlOrPath(UrlOrPath::Url(url)) => {
                 let bytes = match url.scheme() {
                     "https" | "http" => {

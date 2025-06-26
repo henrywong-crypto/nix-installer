@@ -9,8 +9,6 @@ use crate::action::base::{CreateDirectory, CreateOrMergeNixConfig};
 use crate::action::{
     Action, ActionDescription, ActionError, ActionErrorKind, ActionTag, StatefulAction,
 };
-use crate::distribution::Distribution;
-use crate::parse_ssl_cert;
 use crate::settings::UrlOrPathOrString;
 use std::path::PathBuf;
 
@@ -44,39 +42,15 @@ impl PlaceNixConfiguration {
     pub async fn plan(
         nix_build_group_name: String,
         proxy: Option<Url>,
-        ssl_cert_file: Option<PathBuf>,
         extra_conf: Vec<UrlOrPathOrString>,
         force: bool,
-        distribution: Distribution,
     ) -> Result<StatefulAction<Self>, ActionError> {
-        let extra_conf = Self::parse_extra_conf(proxy, ssl_cert_file.as_ref(), extra_conf).await?;
+        let extra_conf = Self::parse_extra_conf(proxy, extra_conf).await?;
 
-        let is_macos = matches!(
-            target_lexicon::OperatingSystem::host(),
-            target_lexicon::OperatingSystem::MacOSX { .. }
-                | target_lexicon::OperatingSystem::Darwin
-        );
-        let configured_ssl_cert_file = if distribution == Distribution::DeterminateNix && is_macos {
-            // On macOS, determinate-nixd will handle configuring the ssl-cert-file option for Nix
-            None
-        } else {
-            ssl_cert_file
-        };
+        let maybe_trusted_users = extra_conf.settings().get(TRUSTED_USERS_CONF_NAME);
+        let standard_nix_config = Some(Self::setup_standard_config(maybe_trusted_users).await?);
 
-        let standard_nix_config = if distribution != Distribution::DeterminateNix {
-            let maybe_trusted_users = extra_conf.settings().get(TRUSTED_USERS_CONF_NAME);
-
-            Some(Self::setup_standard_config(maybe_trusted_users).await?)
-        } else {
-            None
-        };
-
-        let custom_nix_config = Self::setup_extra_config(
-            extra_conf,
-            nix_build_group_name,
-            configured_ssl_cert_file.as_ref(),
-        )
-        .await?;
+        let custom_nix_config = Self::setup_extra_config(extra_conf, nix_build_group_name).await?;
 
         let create_directory = CreateDirectory::plan(NIX_CONF_FOLDER, None, None, 0o0755, force)
             .await
@@ -134,34 +108,6 @@ impl PlaceNixConfiguration {
         // https://github.com/NixOS/nix/pull/8047
         settings.insert("always-allow-substitutes".to_string(), "true".to_string());
 
-        // base, unintrusive Determinate Nix options
-        {
-            // Add FlakeHub cache to the list of possible substituters, but disabled by default.
-            // This allows a user to turn on FlakeHub Cache by adding it to the `extra-substituters`
-            // list without being a trusted user.
-            settings.insert(
-                "extra-trusted-substituters".to_string(),
-                "https://cache.flakehub.com".to_string(),
-            );
-
-            // Add FlakeHub's cache signing keys to the allowed list, but unused unless a user
-            // specifies FlakeHub Cache as an `extra-substituter`.
-            let extra_trusted_public_keys = [
-                "cache.flakehub.com-3:hJuILl5sVK4iKm86JzgdXW12Y2Hwd5G07qKtHTOcDCM=",
-                "cache.flakehub.com-4:Asi8qIv291s0aYLyH6IOnr5Kf6+OF14WVjkE6t3xMio=",
-                "cache.flakehub.com-5:zB96CRlL7tiPtzA9/WKyPkp3A2vqxqgdgyTVNGShPDU=",
-                "cache.flakehub.com-6:W4EGFwAGgBj3he7c5fNh9NkOXw0PUVaxygCVKeuvaqU=",
-                "cache.flakehub.com-7:mvxJ2DZVHn/kRxlIaxYNMuDG1OvMckZu32um1TadOR8=",
-                "cache.flakehub.com-8:moO+OVS0mnTjBTcOUh2kYLQEd59ExzyoW1QgQ8XAARQ=",
-                "cache.flakehub.com-9:wChaSeTI6TeCuV/Sg2513ZIM9i0qJaYsF+lZCXg0J6o=",
-                "cache.flakehub.com-10:2GqeNlIp6AKp4EF2MVbE1kBOp9iBSyo0UPR9KoR0o1Y=",
-            ];
-            settings.insert(
-                "extra-trusted-public-keys".to_string(),
-                extra_trusted_public_keys.join(" "),
-            );
-        }
-
         settings.insert(
             "bash-prompt-prefix".to_string(),
             "(nix:$name)\\040".to_string(),
@@ -171,10 +117,10 @@ impl PlaceNixConfiguration {
             "extra-nix-path".to_string(),
             "nixpkgs=flake:nixpkgs".to_string(),
         );
-        settings.insert(
-            "upgrade-nix-store-path-url".to_string(),
-            "https://install.determinate.systems/nix-upgrade/stable/universal".to_string(),
-        );
+        // settings.insert(
+        //     "upgrade-nix-store-path-url".to_string(),
+        //     "https://install.determinate.systems/nix-upgrade/stable/universal".to_string(),
+        // );
 
         // NOTE(cole-h): This is a workaround to hopefully unbreak users of Cachix.
         // When `cachix use`ing a cache, the Cachix CLI will sanity-check the system configuration
@@ -201,7 +147,6 @@ impl PlaceNixConfiguration {
 
     async fn parse_extra_conf(
         proxy: Option<Url>,
-        ssl_cert_file: Option<&PathBuf>,
         extra_conf: Vec<UrlOrPathOrString>,
     ) -> Result<nix_config_parser::NixConfig, ActionError> {
         let mut extra_conf_text = vec![];
@@ -216,11 +161,6 @@ impl PlaceNixConfiguration {
                                     .map_err(ActionErrorKind::Reqwest)
                                     .map_err(Self::error)?,
                             )
-                        }
-                        if let Some(ssl_cert_file) = &ssl_cert_file {
-                            let ssl_cert =
-                                parse_ssl_cert(ssl_cert_file).await.map_err(Self::error)?;
-                            buildable_client = buildable_client.add_root_certificate(ssl_cert);
                         }
                         let client = buildable_client
                             .build()
@@ -267,22 +207,11 @@ impl PlaceNixConfiguration {
     async fn setup_extra_config(
         mut extra_conf: nix_config_parser::NixConfig,
         nix_build_group_name: String,
-        ssl_cert_file: Option<&PathBuf>,
     ) -> Result<nix_config_parser::NixConfig, ActionError> {
         let settings = extra_conf.settings_mut();
 
         if nix_build_group_name != crate::settings::DEFAULT_NIX_BUILD_USER_GROUP_NAME {
             settings.insert("build-users-group".to_string(), nix_build_group_name);
-        }
-
-        if let Some(ssl_cert_file) = ssl_cert_file {
-            let ssl_cert_file_canonical = ssl_cert_file.canonicalize().map_err(|e| {
-                Self::error(ActionErrorKind::Canonicalize(ssl_cert_file.to_owned(), e))
-            })?;
-            settings.insert(
-                "ssl-cert-file".to_string(),
-                ssl_cert_file_canonical.display().to_string(),
-            );
         }
 
         // NOTE(cole-h): We want to ensure our experimental-features are not clobbered by user
@@ -432,7 +361,6 @@ mod tests {
     async fn extra_trusted_cache() -> eyre::Result<()> {
         let extra_conf = PlaceNixConfiguration::parse_extra_conf(
             None,
-            None,
             vec![
                 UrlOrPathOrString::String(String::from("extra-trusted-substituters = barfoo")),
                 UrlOrPathOrString::String(String::from("extra-trusted-public-keys = foobar")),
@@ -441,8 +369,7 @@ mod tests {
         .await?;
 
         let nix_config =
-            PlaceNixConfiguration::setup_extra_config(extra_conf, String::from("foo"), None)
-                .await?;
+            PlaceNixConfiguration::setup_extra_config(extra_conf, String::from("foo")).await?;
 
         assert!(
             nix_config
@@ -473,7 +400,6 @@ mod tests {
 
         let extra_conf = PlaceNixConfiguration::parse_extra_conf(
             None,
-            None,
             vec![UrlOrPathOrString::String(format!(
                 "{EXPERIMENTAL_FEATURES_CONF_NAME} = foobar"
             ))],
@@ -482,8 +408,7 @@ mod tests {
 
         let standard_nix_config = PlaceNixConfiguration::setup_standard_config(None).await?;
         let custom_nix_config =
-            PlaceNixConfiguration::setup_extra_config(extra_conf, String::from("foo"), None)
-                .await?;
+            PlaceNixConfiguration::setup_extra_config(extra_conf, String::from("foo")).await?;
         dbg!(&custom_nix_config);
         dbg!(custom_nix_config.settings());
         dbg!(custom_nix_config
@@ -560,7 +485,6 @@ mod tests {
 
         let extra_conf = PlaceNixConfiguration::parse_extra_conf(
             None,
-            None,
             vec![UrlOrPathOrString::String(String::from(
                 "trusted-users = bob alice",
             ))],
@@ -572,8 +496,7 @@ mod tests {
         let standard_nix_config =
             PlaceNixConfiguration::setup_standard_config(maybe_trusted_users).await?;
         let custom_nix_config =
-            PlaceNixConfiguration::setup_extra_config(extra_conf, String::from("foo"), None)
-                .await?;
+            PlaceNixConfiguration::setup_extra_config(extra_conf, String::from("foo")).await?;
 
         assert!(
             custom_nix_config

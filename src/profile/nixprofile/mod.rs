@@ -241,14 +241,14 @@ impl NixProfile<'_> {
             .await
             .map_err(|e| {
                 super::Error::StartNixCommand(
-                    format!("nix profile remove'ing conflicting package {:?}", element),
+                    format!("nix profile remove'ing conflicting package {element:?}"),
                     e,
                 )
             })?;
 
         if !output.status.success() {
             return Err(super::Error::NixCommand(
-                format!("nix profile remove'ing conflicting package {:?}", element),
+                format!("nix profile remove'ing conflicting package {element:?}"),
                 output,
             ));
         }
@@ -269,7 +269,7 @@ impl NixProfile<'_> {
             .await
             .map_err(|e| {
                 super::Error::StartNixCommand(
-                    format!("Adding the package {:?} to the profile", add),
+                    format!("Adding the package {add:?} to the profile"),
                     e,
                 )
             })?;
@@ -280,12 +280,6 @@ impl NixProfile<'_> {
 
         Ok(())
     }
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct PackageInfo {
-    #[serde(default)]
-    outputs: HashMap<String, PathBuf>,
 }
 
 fn collect_children<P: AsRef<std::path::Path>>(

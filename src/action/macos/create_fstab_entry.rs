@@ -123,8 +123,7 @@ impl Action for CreateFstabEntry {
         let Self { apfs_volume_label } = &self;
         vec![ActionDescription::new(
             format!(
-                "Remove the UUID based entry for the APFS volume `{}` in `/etc/fstab`",
-                apfs_volume_label
+                "Remove the UUID based entry for the APFS volume `{apfs_volume_label}` in `/etc/fstab`"
             ),
             vec![],
         )]

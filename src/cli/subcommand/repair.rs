@@ -423,7 +423,7 @@ impl CommandExecute for Repair {
 
         for mut action in repair_actions {
             if let Err(err) = action.try_execute().await {
-                println!("{:#?}", err);
+                println!("{err:#?}");
                 return Ok(ExitCode::FAILURE);
             }
             action.state = ActionState::Completed;

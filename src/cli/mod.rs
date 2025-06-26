@@ -239,7 +239,7 @@ pub fn ensure_root() -> eyre::Result<()> {
             for env in env_list {
                 arg_vec_cstring.push(
                     CString::new(env.clone())
-                        .wrap_err_with(|| format!("Building a `{}` argument for `sudo`", env))?,
+                        .wrap_err_with(|| format!("Building a `{env}` argument for `sudo`"))?,
                 );
             }
         }

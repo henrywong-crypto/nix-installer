@@ -367,7 +367,7 @@ pub async fn delete_user_macos(name: &str) -> Result<(), ActionErrorKind> {
     // That is correct, however it's a bit more nuanced. It appears to be that a user must be graphically logged in for some other user on the system to be deleted.
     let mut command = Command::new("/usr/bin/dscl");
     command.process_group(0);
-    command.args([".", "-delete", &format!("/Users/{}", name)]);
+    command.args([".", "-delete", &format!("/Users/{name}")]);
     command.stdin(std::process::Stdio::null());
 
     let output = command

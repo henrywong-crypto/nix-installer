@@ -168,7 +168,7 @@ impl Action for CreateOrInsertIntoFile {
             group = self.group,
             mode = self
                 .mode
-                .map(|v| tracing::field::display(format!("{:#o}", v))),
+                .map(|v| tracing::field::display(format!("{v:#o}"))),
             buf = tracing::field::Empty,
         );
 
