@@ -560,14 +560,6 @@ impl clap::builder::TypedValueParser for UrlOrPathOrString {
     }
 }
 
-#[cfg(feature = "diagnostics")]
-impl crate::diagnostics::ErrorDiagnostic for InstallSettingsError {
-    fn diagnostic(&self) -> String {
-        let static_str: &'static str = (self).into();
-        static_str.to_string()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{FromStr, PathBuf, Url, UrlOrPath, UrlOrPathOrString};

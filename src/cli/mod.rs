@@ -23,9 +23,7 @@ Try our macOS-native package instead, which can handle almost anything: https://
 
 #[async_trait::async_trait]
 pub trait CommandExecute {
-    async fn execute<T>(self, feedback: T) -> eyre::Result<ExitCode>
-    where
-        T: crate::feedback::Feedback;
+    async fn execute(self) -> eyre::Result<ExitCode>;
 }
 
 /**
@@ -50,32 +48,6 @@ pub struct NixInstallerCli {
     )]
     pub ssl_cert_file: Option<PathBuf>,
 
-    #[cfg(feature = "diagnostics")]
-    /// Relate the install diagnostic to a specific value
-    #[cfg_attr(
-        feature = "cli",
-        clap(
-            long,
-            default_value = None,
-            env = "NIX_INSTALLER_DIAGNOSTIC_ATTRIBUTION",
-            global = true
-        )
-    )]
-    pub diagnostic_attribution: Option<String>,
-
-    #[cfg(feature = "diagnostics")]
-    /// The URL or file path for an anonymous installation diagnostic to be sent
-    ///
-    /// To disable diagnostic reporting, unset the default with `--diagnostic-endpoint ""`, or `NIX_INSTALLER_DIAGNOSTIC_ENDPOINT=""`
-    #[clap(
-        long,
-        env = "NIX_INSTALLER_DIAGNOSTIC_ENDPOINT",
-        global = true,
-        num_args = 0..=1, // Required to allow `--diagnostic-endpoint` or `NIX_INSTALLER_DIAGNOSTIC_ENDPOINT=""`
-        default_value = None
-    )]
-    pub diagnostic_endpoint: Option<String>,
-
     #[clap(flatten)]
     pub instrumentation: arg::Instrumentation,
 
@@ -86,23 +58,16 @@ pub struct NixInstallerCli {
 #[async_trait::async_trait]
 impl CommandExecute for NixInstallerCli {
     #[tracing::instrument(level = "trace", skip_all)]
-    async fn execute<T>(self, feedback: T) -> eyre::Result<ExitCode>
-    where
-        T: crate::feedback::Feedback,
-    {
-        let feedback_clone = feedback.clone();
-
+    async fn execute(self) -> eyre::Result<ExitCode> {
         let is_install_subcommand = matches!(self.subcommand, NixInstallerSubcommand::Install(_));
 
         let ret = match self.subcommand {
-            NixInstallerSubcommand::Plan(plan) => plan.execute(feedback_clone).await,
-            NixInstallerSubcommand::SelfTest(self_test) => self_test.execute(feedback_clone).await,
-            NixInstallerSubcommand::Install(install) => install.execute(feedback_clone).await,
-            NixInstallerSubcommand::Repair(repair) => repair.execute(feedback_clone).await,
-            NixInstallerSubcommand::Uninstall(revert) => revert.execute(feedback_clone).await,
-            NixInstallerSubcommand::SplitReceipt(split_receipt) => {
-                split_receipt.execute(feedback_clone).await
-            },
+            NixInstallerSubcommand::Plan(plan) => plan.execute().await,
+            NixInstallerSubcommand::SelfTest(self_test) => self_test.execute().await,
+            NixInstallerSubcommand::Install(install) => install.execute().await,
+            NixInstallerSubcommand::Repair(repair) => repair.execute().await,
+            NixInstallerSubcommand::Uninstall(revert) => revert.execute().await,
+            NixInstallerSubcommand::SplitReceipt(split_receipt) => split_receipt.execute().await,
         };
 
         let maybe_cancelled = ret.as_ref().err().and_then(|err| {
@@ -132,17 +97,12 @@ impl CommandExecute for NixInstallerCli {
             let is_error = ret.as_ref().is_err();
 
             if is_error || is_ok_but_failed {
-                let msg = feedback
-                    .get_feature_ptr_payload::<String>("dni-det-msg-fail-pkg-ptr")
-                    .await
-                    .unwrap_or(FAIL_PKG_SUGGEST.into());
-
                 // NOTE: If the error bubbled up, print it before we log the pkg suggestion
                 if let Err(ref err) = ret {
                     eprintln!("{err:?}\n");
                 }
 
-                tracing::warn!("{}\n", msg.trim());
+                tracing::warn!("{}\n", FAIL_PKG_SUGGEST.trim());
 
                 return Ok(ExitCode::FAILURE);
             }
@@ -224,13 +184,6 @@ pub fn ensure_root() -> eyre::Result<()> {
             if preserve {
                 env_list.push(format!("{key}={value}"));
             }
-        }
-
-        #[cfg(feature = "diagnostics")]
-        if is_ci::cached() {
-            // Normally `sudo` would erase those envs, so we detect and pass that along specifically to avoid having to pass around
-            // a bunch of environment variables
-            env_list.push("DETSYS_IDS_IN_CI=1".to_string());
         }
 
         if !env_list.is_empty() {

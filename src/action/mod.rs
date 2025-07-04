@@ -332,12 +332,6 @@ impl ActionError {
     pub fn action_tag(&self) -> &ActionTag {
         &self.action_tag
     }
-
-    #[cfg(feature = "diagnostics")]
-    pub fn diagnostic(&self) -> String {
-        use crate::diagnostics::ErrorDiagnostic;
-        self.kind.diagnostic()
-    }
 }
 
 impl std::fmt::Display for ActionError {
@@ -498,8 +492,6 @@ pub enum ActionErrorKind {
         command = .command,
     )]
     Command {
-        #[cfg(feature = "diagnostics")]
-        program: String,
         command: String,
         #[source]
         error: std::io::Error,
@@ -520,12 +512,7 @@ pub enum ActionErrorKind {
             "".to_string()
         },
     )]
-    CommandOutput {
-        #[cfg(feature = "diagnostics")]
-        program: String,
-        command: String,
-        output: Output,
-    },
+    CommandOutput { command: String, output: Output },
     #[error("Joining spawned async task")]
     Join(
         #[source]
@@ -585,16 +572,12 @@ pub enum ActionErrorKind {
 impl ActionErrorKind {
     pub fn command(command: &tokio::process::Command, error: std::io::Error) -> Self {
         Self::Command {
-            #[cfg(feature = "diagnostics")]
-            program: command.as_std().get_program().to_string_lossy().into(),
             command: format!("{:?}", command.as_std()),
             error,
         }
     }
     pub fn command_output(command: &tokio::process::Command, output: std::process::Output) -> Self {
         Self::CommandOutput {
-            #[cfg(feature = "diagnostics")]
-            program: command.as_std().get_program().to_string_lossy().into(),
             command: format!("{:?}", command.as_std()),
             output,
         }
@@ -610,62 +593,5 @@ impl HasExpectedErrors for ActionErrorKind {
             Self::SystemdMissing => Some(Box::new(self)),
             _ => None,
         }
-    }
-}
-
-#[cfg(feature = "diagnostics")]
-impl crate::diagnostics::ErrorDiagnostic for ActionErrorKind {
-    fn diagnostic(&self) -> String {
-        let static_str: &'static str = (self).into();
-        let context = match self {
-            Self::Child(child) => vec![child.diagnostic()],
-            Self::MultipleChildren(children) => {
-                children.iter().map(|child| child.diagnostic()).collect()
-            },
-            Self::Read(path, _)
-            | Self::Open(path, _)
-            | Self::Write(path, _)
-            | Self::Flush(path, _)
-            | Self::SetPermissions(_, path, _)
-            | Self::GettingMetadata(path, _)
-            | Self::CreateDirectory(path, _)
-            | Self::PathWasNotFile(path)
-            | Self::Remove(path, _) => {
-                vec![path.to_string_lossy().to_string()]
-            },
-            Self::Rename(first_path, second_path, _)
-            | Self::Copy(first_path, second_path, _)
-            | Self::Symlink(first_path, second_path, _) => {
-                vec![
-                    first_path.to_string_lossy().to_string(),
-                    second_path.to_string_lossy().to_string(),
-                ]
-            },
-            Self::NoGroup(name) | Self::NoUser(name) => {
-                vec![name.clone()]
-            },
-            Self::Command {
-                program,
-                command: _,
-                error: _,
-            }
-            | Self::CommandOutput {
-                program,
-                command: _,
-                output: _,
-            } => {
-                vec![program.clone()]
-            },
-            _ => vec![],
-        };
-        format!(
-            "{}({})",
-            static_str,
-            context
-                .iter()
-                .map(|v| format!("\"{v}\""))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
     }
 }
