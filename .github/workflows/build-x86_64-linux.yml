@@ -1,32 +1,25 @@
 name: Build x86_64 Linux (static)
 
-on:
-  push:
-    branches:
-      - test
+on: push
 
 permissions:
   id-token: "write"
-  contents: "read"
+  contents: "write"
 
 jobs:
   build-x86_64-linux:
     name: Build x86_64 Linux (static)
     runs-on: ubuntu-latest
-    permissions:
-      id-token: "write"
-      contents: "read"
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@main
-      - uses: DeterminateSystems/flakehub-cache-action@main
+      #- uses: DeterminateSystems/flakehub-cache-action@main
       - name: Build the installer
         run: |
           nix build .#packages.x86_64-linux.nix-installer-static -L
           cp result/bin/nix-installer ./nix-installer-x86_64-linux
-      - name: Create GitHub artifacts from build outputs
-        uses: actions/upload-artifact@v4
+      - uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
-          path: nix-installer-x86_64-linux
-          name: nix-installer-x86_64-linux
+          files: nix-installer-x86_64-linux
