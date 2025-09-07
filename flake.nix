@@ -20,7 +20,7 @@
     , ...
     } @ inputs:
     let
-      nix_tarball_url_prefix = "https://releases.nixos.org/nix/nix-2.30.2/nix-2.30.2-";
+      nix_tarball_url_prefix = "https://releases.nixos.org/nix/nix-2.31.1/nix-2.31.1-";
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 
       forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: (forSystem system f));
